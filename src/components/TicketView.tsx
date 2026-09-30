@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Ticket, TriageResult } from '../../shared/types';
 import { fetchTicket, fetchTriage, generateTriage } from '../api';
 import { TriagePanel } from './TriagePanel';
@@ -10,36 +10,69 @@ interface Props {
 
 export function TicketView({ ticketId, onTriageComplete }: Props) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
+  const [ticketError, setTicketError] = useState<string | null>(null);
   const [triage, setTriage] = useState<TriageResult | null>(null);
   const [triageLoading, setTriageLoading] = useState(false);
   const [triageError, setTriageError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setTicket(null);
-    fetchTicket(ticketId).then(setTicket).catch(() => setTicket(null));
+  // Every triage request (initial load or Regenerate) takes a sequence
+  // number; only the latest request may touch triage state. This drops
+  // responses for a ticket the user has left, and stops an older request for
+  // the same ticket from overwriting a newer one.
+  const latestRequest = useRef(0);
+  const onTriageCompleteRef = useRef(onTriageComplete);
+  onTriageCompleteRef.current = onTriageComplete;
 
-    // Load the existing triage, or generate one on first view.
+  const runTriageRequest = (forId: string, request: () => Promise<TriageResult>) => {
+    const seq = ++latestRequest.current;
+    const isLatest = () => latestRequest.current === seq;
     setTriageLoading(true);
     setTriageError(null);
-    fetchTriage(ticketId)
-      .catch(() => generateTriage(ticketId).then((r) => (onTriageComplete(), r)))
-      .then((result) => setTriage(result))
-      .catch((e: Error) => setTriageError(e.message))
-      .finally(() => setTriageLoading(false));
-  }, [ticketId]);
-
-  const regenerate = () => {
-    setTriageLoading(true);
-    setTriageError(null);
-    generateTriage(ticketId)
+    request()
       .then((result) => {
-        setTriage(result);
-        onTriageComplete();
+        if (isLatest() && result.ticketId === forId) setTriage(result);
       })
-      .catch((e: Error) => setTriageError(e.message))
-      .finally(() => setTriageLoading(false));
+      .catch((e: Error) => isLatest() && setTriageError(e.message))
+      .finally(() => isLatest() && setTriageLoading(false));
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    // Clear everything from the previous ticket so it can never be shown
+    // (or acted on) under this ticket's header.
+    setTicket(null);
+    setTicketError(null);
+    setTriage(null);
+
+    fetchTicket(ticketId)
+      .then((t) => !cancelled && setTicket(t))
+      .catch((e: Error) => !cancelled && setTicketError(e.message));
+
+    // Load the existing triage, or generate one on first view.
+    runTriageRequest(ticketId, () =>
+      fetchTriage(ticketId).catch(() =>
+        generateTriage(ticketId).then((r) => {
+          onTriageCompleteRef.current();
+          return r;
+        })
+      )
+    );
+
+    return () => {
+      cancelled = true;
+      latestRequest.current++; // invalidate whatever is in flight for this ticket
+    };
+  }, [ticketId]);
+
+  const regenerate = () =>
+    runTriageRequest(ticketId, () =>
+      generateTriage(ticketId).then((r) => {
+        onTriageCompleteRef.current();
+        return r;
+      })
+    );
+
+  if (ticketError) return <div className="error-banner">{ticketError}</div>;
   if (!ticket) return <div className="empty-state">Loading ticket…</div>;
 
   return (

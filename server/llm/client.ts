@@ -20,6 +20,8 @@ class OpenAICompatibleClient implements LLMClient {
   async complete(req: CompletionRequest): Promise<string> {
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
+      // A hung provider should fail the request, not pin it open forever.
+      signal: AbortSignal.timeout(timeoutMs()),
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.apiKey}`,
@@ -42,6 +44,11 @@ class OpenAICompatibleClient implements LLMClient {
     };
     return json.choices[0]?.message?.content ?? '';
   }
+}
+
+function timeoutMs(): number {
+  const ms = Number(process.env.LLM_TIMEOUT_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : 30_000;
 }
 
 let client: LLMClient | null = null;

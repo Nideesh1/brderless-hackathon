@@ -33,6 +33,28 @@ export function TriagePanel({ triage, loading, error, onRegenerate }: Props) {
             </span>
           </div>
 
+          {triage.warnings.length > 0 && (
+            <div className="error-banner" role="alert">
+              <strong>Review before sending:</strong>
+              <ul>
+                {triage.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {triage.escalationReasons.length > 0 && (
+            <>
+              <h4>Why escalate</h4>
+              <ul className="escalation-reasons">
+                {triage.escalationReasons.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            </>
+          )}
+
           <h4>Drafted reply</h4>
           <pre className="drafted-reply">{triage.reply}</pre>
 

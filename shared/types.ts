@@ -32,14 +32,35 @@ export interface Citation {
   snippet: string;
 }
 
+// Canonical label vocabularies. LLM output is normalized into these at the
+// parser boundary; nothing downstream should ever see a raw model label.
+export const CATEGORIES = [
+  'refund',
+  'billing',
+  'outage',
+  'security',
+  'cancellation',
+  'privacy',
+  'account',
+  'general',
+] as const;
+export type Category = (typeof CATEGORIES)[number];
+
+export const URGENCIES = ['low', 'medium', 'high'] as const;
+export type Urgency = (typeof URGENCIES)[number];
+
 export interface TriageResult {
   ticketId: string;
-  category: string;
-  urgency: string;
+  category: Category;
+  urgency: Urgency;
   escalate: boolean;
+  /** Why the ticket is escalated: the model's call and/or deterministic policy rules. */
+  escalationReasons: string[];
   reply: string;
   reasoning: string;
   citations: Citation[];
+  /** Guardrail interventions the agent should know about before sending the reply. */
+  warnings: string[];
   generatedAt: string;
 }
 
@@ -51,8 +72,8 @@ export interface TicketSummary {
   status: Ticket['status'];
   createdAt: string;
   lastTriage?: {
-    category: string;
-    urgency: string;
+    category: Category;
+    urgency: Urgency;
     escalate: boolean;
   };
 }

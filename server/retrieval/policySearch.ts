@@ -36,13 +36,33 @@ export interface ScoredDoc {
   score: number;
 }
 
+export interface SearchOptions {
+  /**
+   * Which audiences may be returned. Defaults to public only: retrieved text is
+   * fed to the model that drafts a customer-facing reply, so internal docs must
+   * be opted into explicitly.
+   */
+  audiences?: PolicyDoc['audience'][];
+}
+
+/**
+ * Deprecated docs are a hard exclusion, not a score penalty: a superseded
+ * policy must never be able to outrank the current one, however many keywords
+ * it happens to repeat.
+ */
+export function isRetrievable(doc: PolicyDoc, audiences: PolicyDoc['audience'][]): boolean {
+  return doc.status === 'active' && audiences.includes(doc.audience);
+}
+
 export function searchPolicies(
   query: string,
   docs: PolicyDoc[],
-  limit = 3
+  limit = 3,
+  { audiences = ['public'] }: SearchOptions = {}
 ): ScoredDoc[] {
   const terms = tokenize(query);
   return docs
+    .filter((doc) => isRetrievable(doc, audiences))
     .map((doc) => ({ doc, score: scoreDoc(terms, doc) }))
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score)
